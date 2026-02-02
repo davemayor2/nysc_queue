@@ -25,8 +25,9 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
-      scriptSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "https://va.vercel-scripts.com"],
       imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'", "https://va.vercel-scripts.com"],
     },
   },
   hsts: {
