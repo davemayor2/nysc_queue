@@ -1,0 +1,12 @@
+node_modules
+.env
+*.log
+.DS_Store
+.vscode
+SETUP.md
+DEPLOYMENT.md
+ADMIN_GUIDE.md
+PROJECT_STRUCTURE.md
+QUICKSTART.md
+CHANGES_SUMMARY.md
+TIMESTAMP_UPDATE.md

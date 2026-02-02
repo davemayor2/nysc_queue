@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NYSC Queue Management System</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <div class="logo">
+        <h1>🎯 NYSC Queue System</h1>
+        <p>Location-Restricted Digital Queuing</p>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <!-- Queue Generation Form -->
+      <div id="generateSection" class="card">
+        <h2>Generate Queue Number</h2>
+        <p class="info-text">
+          ⚠️ You must be physically present at the LGA to generate a queue number.
+        </p>
+
+        <form id="queueForm">
+          <div class="form-group">
+            <label for="stateCode">NYSC State Code *</label>
+            <input 
+              type="text" 
+              id="stateCode" 
+              name="stateCode"
+              placeholder="e.g., LA/23A/1234"
+              required
+              pattern="[A-Z]{2}/\d{2}[A-C]/\d{1,5}"
+              title="Format: NY/23A/1234"
+            >
+            <small>Format: STATE/YEAR+BATCH/NUMBER (e.g., NY/23A/1234)</small>
+          </div>
+
+          <div class="location-info" id="locationInfo">
+            <p>📍 Requesting GPS location...</p>
+          </div>
+
+          <button type="submit" id="submitBtn" class="btn btn-primary">
+            Generate Queue Number
+          </button>
+        </form>
+
+        <div id="loadingSpinner" class="spinner" style="display: none;">
+          <div class="spinner-circle"></div>
+          <p>Generating queue number...</p>
+        </div>
+      </div>
+
+      <!-- Queue Result Display -->
+      <div id="resultSection" class="card" style="display: none;">
+        <div class="result-success">
+          <h2>✅ Queue Number Generated</h2>
+          
+          <div class="queue-display">
+            <div class="queue-number" id="queueNumber">000</div>
+            <p class="queue-label">Your Queue Number</p>
+          </div>
+
+          <div class="result-details">
+            <div class="detail-item">
+              <span class="label">State Code:</span>
+              <span class="value" id="stateCodeDisplay">-</span>
+            </div>
+            <div class="detail-item">
+              <span class="label">LGA:</span>
+              <span class="value" id="lgaName">-</span>
+            </div>
+            <div class="detail-item">
+              <span class="label">Generated On:</span>
+              <span class="value" id="generatedOnDisplay">-</span>
+            </div>
+            <div class="detail-item">
+              <span class="label">Status:</span>
+              <span class="value status-badge" id="statusDisplay">-</span>
+            </div>
+          </div>
+
+          <div class="qr-code-container">
+            <img id="qrCode" src="" alt="QR Code" style="display: none;">
+          </div>
+
+          <div class="instructions">
+            <h3>Important Instructions:</h3>
+            <ul>
+              <li>Save this queue number for verification</li>
+              <li>This number is valid only for today</li>
+              <li>Do not share this link or screenshot</li>
+              <li>You can only access this from your current device</li>
+            </ul>
+          </div>
+
+          <button id="newQueueBtn" class="btn btn-secondary">
+            Check Another Queue
+          </button>
+        </div>
+      </div>
+
+      <!-- Error Display -->
+      <div id="errorSection" class="card error-card" style="display: none;">
+        <h2>❌ Error</h2>
+        <p id="errorMessage"></p>
+        <button id="retryBtn" class="btn btn-secondary">Try Again</button>
+      </div>
+
+      <!-- Admin Access Link -->
+      <div class="card admin-link-section">
+        <p style="text-align: center; color: #666;">
+          🔐 LGA Officials? <a href="/admin.html" style="color: #2c5f2d; font-weight: 600;">Access Admin Panel</a>
+        </p>
+      </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <p>NYSC LGA Queue Management System v1.0</p>
+      <p>Secure • Location-Restricted • Anti-Fraud</p>
+      <p>Designed and Developed by David Ola-John • +234 7011 106050</p>
+    </footer>
+  </div>
+
+  <script src="fingerprint.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
