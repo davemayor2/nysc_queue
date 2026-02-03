@@ -32,12 +32,13 @@
               type="text" 
               id="stateCode" 
               name="stateCode"
-              placeholder="e.g., LA/23A/1234"
+              placeholder="LA23A1234"
               required
-              pattern="[A-Z]{2}/\d{2}[A-C]/\d{1,5}"
-              title="Format: NY/23A/1234"
+              maxlength="13"
+              title="Enter your NYSC state code (slashes auto-added)"
+              autocomplete="off"
             >
-            <small>Format: STATE/YEAR+BATCH/NUMBER (e.g., NY/23A/1234)</small>
+            <small>✨ Just type your code - slashes will be added automatically (e.g., type "NY23A1234" → "NY/23A/1234")</small>
           </div>
 
           <div class="location-info" id="locationInfo">

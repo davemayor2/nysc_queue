@@ -110,9 +110,95 @@ function showLocationError(message) {
 // EVENT LISTENERS
 // ============================================
 
+// ============================================
+// STATE CODE AUTO-FORMATTING
+// ============================================
+
+/**
+ * Formats state code input as user types
+ * Format: XX/XXX/XXXXX (e.g., NY/23A/1234)
+ */
+function formatStateCode(e) {
+  const input = e.target;
+  let value = input.value.toUpperCase();
+  
+  // Remove all non-alphanumeric characters
+  value = value.replace(/[^A-Z0-9]/g, '');
+  
+  // Store cursor position
+  let cursorPosition = input.selectionStart;
+  const oldLength = input.value.length;
+  
+  // Apply formatting
+  let formatted = '';
+  
+  // First segment: 2 letters (State Code)
+  if (value.length > 0) {
+    formatted = value.substring(0, 2);
+  }
+  
+  // Add first slash and second segment: 2 digits + 1 letter (Year + Batch)
+  if (value.length > 2) {
+    formatted += '/' + value.substring(2, 5);
+  }
+  
+  // Add second slash and third segment: up to 5 digits (Number)
+  if (value.length > 5) {
+    formatted += '/' + value.substring(5, 10);
+  }
+  
+  // Update input value
+  input.value = formatted;
+  
+  // Adjust cursor position after formatting
+  const newLength = formatted.length;
+  if (oldLength < newLength) {
+    // Character was added
+    if (formatted[cursorPosition] === '/') {
+      cursorPosition++;
+    }
+  }
+  
+  // Restore cursor position
+  input.setSelectionRange(cursorPosition, cursorPosition);
+}
+
+/**
+ * Handles backspace/delete behavior for state code input
+ */
+function handleStateCodeKeydown(e) {
+  const input = e.target;
+  const cursorPosition = input.selectionStart;
+  const value = input.value;
+  
+  // Handle backspace
+  if (e.key === 'Backspace' && cursorPosition > 0) {
+    // If cursor is right after a slash, delete the character before the slash
+    if (value[cursorPosition - 1] === '/') {
+      e.preventDefault();
+      const newValue = value.substring(0, cursorPosition - 2) + value.substring(cursorPosition);
+      input.value = newValue;
+      input.setSelectionRange(cursorPosition - 2, cursorPosition - 2);
+      
+      // Trigger input event to reformat
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  }
+  
+  // Prevent typing if max length reached (10 characters with slashes)
+  if (value.length >= 13 && e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
+    e.preventDefault();
+  }
+}
+
 function setupEventListeners() {
   // Queue generation form
   queueForm.addEventListener('submit', handleQueueGeneration);
+  
+  // State code auto-formatting
+  const stateCodeInput = document.getElementById('stateCode');
+  stateCodeInput.addEventListener('input', formatStateCode);
+  stateCodeInput.addEventListener('keydown', handleStateCodeKeydown);
   
   // Retry button
   document.getElementById('retryBtn')?.addEventListener('click', resetForm);
