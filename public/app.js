@@ -111,83 +111,150 @@ function showLocationError(message) {
 // ============================================
 
 // ============================================
-// STATE CODE AUTO-FORMATTING
+// STATE CODE INPUT MASK
 // ============================================
 
+const STATE_CODE_MASK = '__/___/____';
+
 /**
- * Formats state code input as user types
- * Format: XX/XXX/XXXXX (e.g., NY/23A/1234)
+ * Initialize state code input with mask
  */
-function formatStateCode(e) {
-  const input = e.target;
-  let value = input.value.toUpperCase();
-  
-  // Remove all non-alphanumeric characters
-  value = value.replace(/[^A-Z0-9]/g, '');
-  
-  // Store cursor position
-  let cursorPosition = input.selectionStart;
-  const oldLength = input.value.length;
-  
-  // Apply formatting
-  let formatted = '';
-  
-  // First segment: 2 letters (State Code)
-  if (value.length > 0) {
-    formatted = value.substring(0, 2);
+function initializeStateCodeMask() {
+  const input = document.getElementById('stateCode');
+  if (input) {
+    // Set initial cursor position
+    setTimeout(() => {
+      input.setSelectionRange(0, 0);
+    }, 0);
   }
-  
-  // Add first slash and second segment: 2 digits + 1 letter (Year + Batch)
-  if (value.length > 2) {
-    formatted += '/' + value.substring(2, 5);
-  }
-  
-  // Add second slash and third segment: up to 5 digits (Number)
-  if (value.length > 5) {
-    formatted += '/' + value.substring(5, 10);
-  }
-  
-  // Update input value
-  input.value = formatted;
-  
-  // Adjust cursor position after formatting
-  const newLength = formatted.length;
-  if (oldLength < newLength) {
-    // Character was added
-    if (formatted[cursorPosition] === '/') {
-      cursorPosition++;
-    }
-  }
-  
-  // Restore cursor position
-  input.setSelectionRange(cursorPosition, cursorPosition);
 }
 
 /**
- * Handles backspace/delete behavior for state code input
+ * Handles typing in the masked state code field
  */
 function handleStateCodeKeydown(e) {
   const input = e.target;
-  const cursorPosition = input.selectionStart;
-  const value = input.value;
+  const key = e.key;
+  let cursorPos = input.selectionStart;
+  let value = input.value;
   
-  // Handle backspace
-  if (e.key === 'Backspace' && cursorPosition > 0) {
-    // If cursor is right after a slash, delete the character before the slash
-    if (value[cursorPosition - 1] === '/') {
-      e.preventDefault();
-      const newValue = value.substring(0, cursorPosition - 2) + value.substring(cursorPosition);
-      input.value = newValue;
-      input.setSelectionRange(cursorPosition - 2, cursorPosition - 2);
-      
-      // Trigger input event to reformat
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    }
+  // Allow special keys
+  if (['Tab', 'Shift', 'Control', 'Alt', 'Meta', 'CapsLock'].includes(key)) {
+    return;
   }
   
-  // Prevent typing if max length reached (10 characters with slashes)
-  if (value.length >= 13 && e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
+  // Handle backspace
+  if (key === 'Backspace') {
     e.preventDefault();
+    
+    // Find previous editable position
+    let deletePos = cursorPos - 1;
+    while (deletePos >= 0 && value[deletePos] === '/') {
+      deletePos--;
+    }
+    
+    if (deletePos >= 0) {
+      const newValue = value.substring(0, deletePos) + '_' + value.substring(deletePos + 1);
+      input.value = newValue;
+      input.setSelectionRange(deletePos, deletePos);
+    }
+    return;
+  }
+  
+  // Handle delete key
+  if (key === 'Delete') {
+    e.preventDefault();
+    
+    let deletePos = cursorPos;
+    while (deletePos < value.length && value[deletePos] === '/') {
+      deletePos++;
+    }
+    
+    if (deletePos < value.length) {
+      const newValue = value.substring(0, deletePos) + '_' + value.substring(deletePos + 1);
+      input.value = newValue;
+      input.setSelectionRange(cursorPos, cursorPos);
+    }
+    return;
+  }
+  
+  // Handle arrow keys
+  if (key === 'ArrowRight') {
+    e.preventDefault();
+    let nextPos = cursorPos + 1;
+    while (nextPos < value.length && value[nextPos] === '/') {
+      nextPos++;
+    }
+    input.setSelectionRange(nextPos, nextPos);
+    return;
+  }
+  
+  if (key === 'ArrowLeft') {
+    e.preventDefault();
+    let prevPos = cursorPos - 1;
+    while (prevPos >= 0 && value[prevPos] === '/') {
+      prevPos--;
+    }
+    if (prevPos >= 0) {
+      input.setSelectionRange(prevPos, prevPos);
+    }
+    return;
+  }
+  
+  if (key === 'Home') {
+    e.preventDefault();
+    input.setSelectionRange(0, 0);
+    return;
+  }
+  
+  if (key === 'End') {
+    e.preventDefault();
+    input.setSelectionRange(value.length, value.length);
+    return;
+  }
+  
+  // Handle regular character input
+  if (key.length === 1) {
+    e.preventDefault();
+    
+    // Skip over slashes to find next input position
+    let insertPos = cursorPos;
+    while (insertPos < value.length && value[insertPos] === '/') {
+      insertPos++;
+    }
+    
+    if (insertPos >= value.length) return;
+    
+    const char = key.toUpperCase();
+    
+    // Validate character based on position
+    let isValid = false;
+    if (insertPos < 2 && /[A-Z]/.test(char)) {
+      // First 2: letters (state code)
+      isValid = true;
+    } else if ((insertPos >= 3 && insertPos <= 4) && /[0-9]/.test(char)) {
+      // Positions 3-4: digits (year)
+      isValid = true;
+    } else if (insertPos === 5 && /[A-C]/.test(char)) {
+      // Position 5: letter A-C (batch)
+      isValid = true;
+    } else if (insertPos >= 7 && /[0-9]/.test(char)) {
+      // Positions 7+: digits (number)
+      isValid = true;
+    }
+    
+    if (isValid) {
+      // Insert character
+      const newValue = value.substring(0, insertPos) + char + value.substring(insertPos + 1);
+      input.value = newValue;
+      
+      // Move cursor to next position (skip slashes)
+      let nextPos = insertPos + 1;
+      while (nextPos < newValue.length && newValue[nextPos] === '/') {
+        nextPos++;
+      }
+      input.setSelectionRange(nextPos, nextPos);
+    }
   }
 }
 
@@ -195,10 +262,40 @@ function setupEventListeners() {
   // Queue generation form
   queueForm.addEventListener('submit', handleQueueGeneration);
   
-  // State code auto-formatting
+  // State code input mask
   const stateCodeInput = document.getElementById('stateCode');
-  stateCodeInput.addEventListener('input', formatStateCode);
+  initializeStateCodeMask();
   stateCodeInput.addEventListener('keydown', handleStateCodeKeydown);
+  
+  // Handle click - move cursor away from slashes
+  stateCodeInput.addEventListener('click', function() {
+    const pos = this.selectionStart;
+    if (this.value[pos] === '/') {
+      this.setSelectionRange(pos + 1, pos + 1);
+    }
+  });
+  
+  // Handle paste in masked input
+  stateCodeInput.addEventListener('paste', (e) => {
+    e.preventDefault();
+    const pastedText = e.clipboardData.getData('text').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    
+    // Insert pasted text character by character
+    let value = stateCodeInput.value;
+    let pos = 0;
+    
+    for (let i = 0; i < pastedText.length && pos < value.length; i++) {
+      while (pos < value.length && value[pos] === '/') {
+        pos++;
+      }
+      if (pos < value.length) {
+        value = value.substring(0, pos) + pastedText[i] + value.substring(pos + 1);
+        pos++;
+      }
+    }
+    
+    stateCodeInput.value = value;
+  });
   
   // Retry button
   document.getElementById('retryBtn')?.addEventListener('click', resetForm);
@@ -226,12 +323,15 @@ async function handleQueueGeneration(e) {
     return;
   }
 
-  const stateCode = document.getElementById('stateCode').value.trim().toUpperCase();
+  const stateCodeRaw = document.getElementById('stateCode').value.trim().toUpperCase();
   
-  if (!stateCode) {
-    showError('Please enter your NYSC state code');
+  // Check if state code is complete (no underscores)
+  if (!stateCodeRaw || stateCodeRaw.includes('_')) {
+    showError('Please complete your NYSC state code');
     return;
   }
+  
+  const stateCode = stateCodeRaw;
 
   // Show loading
   queueForm.style.display = 'none';
@@ -415,6 +515,9 @@ function resetForm() {
   queueForm.reset();
   queueForm.style.display = 'block';
   
+  // Reset state code mask
+  document.getElementById('stateCode').value = STATE_CODE_MASK;
+  
   // Request new location
   requestLocation();
   
@@ -432,11 +535,6 @@ document.getElementById('referenceIdInput')?.addEventListener('keypress', (e) =>
     e.preventDefault();
     handleVerification(e);
   }
-});
-
-// Auto-format state code input
-document.getElementById('stateCode')?.addEventListener('input', (e) => {
-  e.target.value = e.target.value.toUpperCase();
 });
 
 console.log('App initialized successfully');
