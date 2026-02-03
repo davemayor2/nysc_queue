@@ -109,40 +109,68 @@ router.post('/generate', queueGenerationLimiter, async (req, res) => {
       });
     }
 
-    // VALIDATION 5: Check for existing queue entry today
+    // VALIDATION 5: Check if this DEVICE has already generated a queue today
+    // ONE QUEUE PER DEVICE PER DAY - regardless of state code
     const today = new Date().toISOString().split('T')[0];
-    const existingEntry = await client.query(`
+    const deviceCheckResult = await client.query(`
+      SELECT * FROM queue_entries 
+      WHERE device_fingerprint = $1 
+      AND date = $2 
+      AND lga_id = $3
+    `, [deviceFingerprint, today, lga.id]);
+
+    if (deviceCheckResult.rows.length > 0) {
+      const existing = deviceCheckResult.rows[0];
+      await client.query('ROLLBACK');
+      
+      // Check if they're using the same state code
+      if (existing.state_code === normalizedStateCode) {
+        // Same device, same state code - return existing queue
+        logSecurityEvent(req, 'QUEUE_GENERATION', 'SUCCESS - Returned existing queue');
+        return res.status(200).json({
+          message: 'You already have a queue number for today',
+          queue_number: existing.queue_number,
+          lga: lga.name,
+          reference_id: existing.id,
+          status: existing.status,
+          date: existing.date
+        });
+      } else {
+        // Same device, different state code - DENY
+        logSecurityEvent(req, 'QUEUE_GENERATION', `FAILED - Device already used (existing: ${existing.state_code}, attempted: ${normalizedStateCode})`);
+        return res.status(403).json({
+          error: 'One queue per device limit exceeded',
+          message: 'This device has already generated a queue number today',
+          details: {
+            existing_queue_number: existing.queue_number,
+            existing_state_code: existing.state_code,
+            attempted_state_code: normalizedStateCode,
+            policy: 'Only one queue number per device per day is allowed'
+          }
+        });
+      }
+    }
+
+    // VALIDATION 6: Check if this STATE CODE was already used (from different device)
+    const stateCodeCheckResult = await client.query(`
       SELECT * FROM queue_entries 
       WHERE state_code = $1 
       AND date = $2 
       AND lga_id = $3
     `, [normalizedStateCode, today, lga.id]);
 
-    if (existingEntry.rows.length > 0) {
-      const existing = existingEntry.rows[0];
+    if (stateCodeCheckResult.rows.length > 0) {
+      const existing = stateCodeCheckResult.rows[0];
       
-      // VALIDATION 6: Device fingerprint check for returning user
+      // State code exists but from different device - DENY
       if (existing.device_fingerprint !== deviceFingerprint) {
         await client.query('ROLLBACK');
-        logSecurityEvent(req, 'QUEUE_GENERATION', 'FAILED - Device mismatch');
+        logSecurityEvent(req, 'QUEUE_GENERATION', 'FAILED - State code already used from different device');
         return res.status(401).json({
-          error: 'Device mismatch detected',
+          error: 'State code already used',
           message: 'This state code has already been used from a different device today'
         });
       }
-
-      // Same device, return existing queue number
-      await client.query('COMMIT');
-      logSecurityEvent(req, 'QUEUE_GENERATION', 'SUCCESS - Returned existing queue');
-      
-      return res.status(200).json({
-        message: 'You already have a queue number for today',
-        queue_number: existing.queue_number,
-        lga: lga.name,
-        reference_id: existing.id,
-        status: existing.status,
-        date: existing.date
-      });
     }
 
     // GENERATE NEW QUEUE NUMBER
