@@ -32,7 +32,7 @@ function validateStateCode(stateCode) {
   if (!pattern.test(stateCode)) {
     return {
       valid: false,
-      message: 'Invalid state code format. Expected: LA/23A/1234'
+      message: 'Invalid state code format. Expected: NY/23A/1234'
     };
   }
 

@@ -32,6 +32,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Request GPS location
   requestLocation();
   
+  // Load statistics
+  loadStats();
+  
   // Setup event listeners
   setupEventListeners();
 });
@@ -116,6 +119,12 @@ function setupEventListeners() {
   
   // New queue button
   document.getElementById('newQueueBtn')?.addEventListener('click', resetForm);
+  
+  // Verification form
+  verifyForm.addEventListener('submit', handleVerification);
+  
+  // Refresh stats button
+  document.getElementById('refreshStatsBtn')?.addEventListener('click', loadStats);
 }
 
 // ============================================
@@ -161,8 +170,12 @@ async function handleQueueGeneration(e) {
     if (response.ok) {
       // Success - show queue number
       showQueueResult(data, stateCode);
+      loadStats();
+    } else if (response.status === 403 && data.existing_queue) {
+      // Device already used today - show their existing queue
+      showDeviceAlreadyUsedError(data);
     } else {
-      // Error from server
+      // Other errors
       throw new Error(data.error || data.message || 'Failed to generate queue number');
     }
 
@@ -182,12 +195,10 @@ function showQueueResult(data, stateCode) {
   // Populate result data
   document.getElementById('queueNumber').textContent = 
     String(data.queue_number).padStart(3, '0');
-  document.getElementById('stateCodeDisplay').textContent = stateCode;
   document.getElementById('lgaName').textContent = data.lga;
-  
-  // Format and display generation timestamp
-  const generatedOn = formatDateTime(new Date());
-  document.getElementById('generatedOnDisplay').textContent = generatedOn;
+  document.getElementById('stateCodeDisplay').textContent = stateCode;
+  document.getElementById('dateDisplay').textContent = 
+    new Date(data.date).toLocaleDateString();
   
   const statusBadge = document.getElementById('statusDisplay');
   statusBadge.textContent = data.status;
@@ -208,6 +219,86 @@ function showQueueResult(data, stateCode) {
 }
 
 // ============================================
+// QUEUE VERIFICATION
+// ============================================
+
+async function handleVerification(e) {
+  e.preventDefault();
+  
+  const referenceId = document.getElementById('referenceIdInput').value.trim();
+  const verifyResult = document.getElementById('verifyResult');
+  
+  if (!referenceId) {
+    verifyResult.innerHTML = '<p style="color: red;">Please enter a reference ID</p>';
+    verifyResult.style.display = 'block';
+    return;
+  }
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/queue/verify`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        reference_id: referenceId,
+        mark_used: false // Set to true to mark as used
+      })
+    });
+
+    const data = await response.json();
+
+    if (response.ok && data.valid) {
+      verifyResult.className = 'success';
+      verifyResult.innerHTML = `
+        <h4>✅ Valid Queue Number</h4>
+        <p><strong>Queue Number:</strong> ${data.queue_number}</p>
+        <p><strong>State Code:</strong> ${data.state_code}</p>
+        <p><strong>LGA:</strong> ${data.lga}</p>
+        <p><strong>Status:</strong> ${data.status}</p>
+        <p><strong>Date:</strong> ${new Date(data.date).toLocaleDateString()}</p>
+      `;
+    } else {
+      verifyResult.className = 'error';
+      verifyResult.innerHTML = `
+        <h4>❌ Invalid Queue Number</h4>
+        <p>${data.error || 'This queue number could not be verified'}</p>
+      `;
+    }
+    
+    verifyResult.style.display = 'block';
+
+  } catch (error) {
+    console.error('Verification error:', error);
+    verifyResult.className = 'error';
+    verifyResult.innerHTML = '<p>Verification failed. Please try again.</p>';
+    verifyResult.style.display = 'block';
+  }
+}
+
+// ============================================
+// STATISTICS
+// ============================================
+
+async function loadStats() {
+  try {
+    const response = await fetch(`${API_BASE_URL}/queue/stats`);
+    const data = await response.json();
+
+    if (data.stats) {
+      const totalEl = document.getElementById('totalQueued');
+      const activeEl = document.getElementById('activeCount');
+      const usedEl = document.getElementById('usedCount');
+      if (totalEl) totalEl.textContent = data.stats.total_queued || 0;
+      if (activeEl) activeEl.textContent = data.stats.active || 0;
+      if (usedEl) usedEl.textContent = data.stats.used || 0;
+    }
+  } catch (error) {
+    console.error('Failed to load statistics:', error);
+  }
+}
+
+// ============================================
 // ERROR HANDLING
 // ============================================
 
@@ -217,6 +308,30 @@ function showError(message) {
   errorSection.style.display = 'block';
   
   document.getElementById('errorMessage').textContent = message;
+  
+  errorSection.scrollIntoView({ behavior: 'smooth' });
+}
+
+/**
+ * Show friendly message when device has already generated a queue today
+ */
+function showDeviceAlreadyUsedError(data) {
+  generateSection.style.display = 'none';
+  resultSection.style.display = 'none';
+  errorSection.style.display = 'block';
+  
+  const eq = data.existing_queue;
+  document.getElementById('errorMessage').innerHTML = `
+    <strong>${data.error}</strong>
+    <p style="margin: 15px 0;">${data.message}</p>
+    <div style="background: #e7f3ff; padding: 15px; border-radius: 8px; margin: 15px 0;">
+      <strong>Your existing queue:</strong><br>
+      Queue Number: <strong>${String(eq.queue_number).padStart(3, '0')}</strong><br>
+      State Code: ${eq.state_code}<br>
+      LGA: ${eq.lga}<br>
+      Status: ${eq.status}
+    </div>
+  `;
   
   errorSection.scrollIntoView({ behavior: 'smooth' });
 }
@@ -242,40 +357,13 @@ function resetForm() {
 // UTILITY FUNCTIONS
 // ============================================
 
-/**
- * Format date and time in human-readable format
- * Example: "Monday, 12 August 2026 at 9:14 AM"
- * @param {Date} date - Date object to format
- * @returns {string} Formatted date and time string
- */
-function formatDateTime(date) {
-  const options = {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true
-  };
-  
-  const formatted = date.toLocaleString('en-US', options);
-  // Format: "Monday, August 12, 2026 at 9:14 AM"
-  // We want: "Monday, 12 August 2026 at 9:14 AM"
-  
-  // Get individual components
-  const weekday = date.toLocaleDateString('en-US', { weekday: 'long' });
-  const day = date.getDate();
-  const month = date.toLocaleDateString('en-US', { month: 'long' });
-  const year = date.getFullYear();
-  const time = date.toLocaleTimeString('en-US', { 
-    hour: 'numeric', 
-    minute: '2-digit',
-    hour12: true 
-  });
-  
-  return `${weekday}, ${day} ${month} ${year} at ${time}`;
-}
+// Prevent form submission on Enter in verification input
+document.getElementById('referenceIdInput')?.addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    handleVerification(e);
+  }
+});
 
 // Auto-format state code input
 document.getElementById('stateCode')?.addEventListener('input', (e) => {

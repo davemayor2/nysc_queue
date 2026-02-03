@@ -3,19 +3,12 @@ const crypto = require('crypto');
 /**
  * Device Fingerprinting Utilities
  * Generates unique device identifiers to prevent device switching and link sharing
+ * Uses two fingerprints: full (browser-specific) and stable (device-specific across browsers)
  */
 
 /**
- * Generate a secure device fingerprint hash
- * Combines multiple device characteristics to create a unique identifier
- * 
- * @param {Object} deviceInfo - Device information from client
- * @param {string} deviceInfo.userAgent - Browser user agent
- * @param {string} deviceInfo.platform - Operating system platform
- * @param {string} deviceInfo.screenResolution - Screen width x height
- * @param {string} deviceInfo.timezone - User's timezone
- * @param {string} deviceInfo.language - Browser language
- * @returns {string} SHA-256 hash of device characteristics
+ * Generate a secure device fingerprint hash (browser-specific)
+ * Used for same-browser validation
  */
 function generateFingerprint(deviceInfo) {
   const {
@@ -26,7 +19,6 @@ function generateFingerprint(deviceInfo) {
     language = ''
   } = deviceInfo;
 
-  // Concatenate device characteristics
   const fingerprintString = [
     userAgent,
     platform,
@@ -35,11 +27,36 @@ function generateFingerprint(deviceInfo) {
     language
   ].join('|');
 
-  // Generate SHA-256 hash
-  return crypto
-    .createHash('sha256')
-    .update(fingerprintString)
-    .digest('hex');
+  return crypto.createHash('sha256').update(fingerprintString).digest('hex');
+}
+
+/**
+ * Generate a STABLE device fingerprint that persists across different browsers on the same device
+ * Excludes userAgent - uses hardware/screen attributes that are identical across Chrome, Firefox, Safari, etc.
+ * Prevents: same phone → Chrome gets queue → Firefox tries to get another
+ */
+function generateStableFingerprint(deviceInfo) {
+  const {
+    platform = '',
+    screenResolution = '',
+    timezone = '',
+    language = '',
+    metadata = {}
+  } = deviceInfo;
+
+  const stableAttributes = [
+    platform,
+    screenResolution,
+    timezone,
+    language,
+    metadata.colorDepth || '',
+    metadata.hardwareConcurrency || '',
+    metadata.deviceMemory || '',
+    metadata.maxTouchPoints || '',
+    metadata.canvas || ''
+  ].join('|');
+
+  return crypto.createHash('sha256').update(stableAttributes).digest('hex');
 }
 
 /**
@@ -79,6 +96,7 @@ function validateDeviceInfo(deviceInfo) {
 
 module.exports = {
   generateFingerprint,
+  generateStableFingerprint,
   validateFingerprint,
   validateDeviceInfo
 };

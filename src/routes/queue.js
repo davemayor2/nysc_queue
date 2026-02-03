@@ -6,7 +6,7 @@ const QRCode = require('qrcode');
 
 const { validateStateCode, validateLocation } = require('../utils/validation');
 const { isWithinGeofence, validateCoordinates } = require('../utils/geofencing');
-const { generateFingerprint, validateDeviceInfo } = require('../utils/fingerprint');
+const { generateFingerprint, generateStableFingerprint, validateDeviceInfo } = require('../utils/fingerprint');
 const { queueGenerationLimiter, verificationLimiter } = require('../middleware/rateLimiter');
 const { logSecurityEvent } = require('../middleware/security');
 
@@ -69,8 +69,10 @@ router.post('/generate', queueGenerationLimiter, async (req, res) => {
       });
     }
 
-    // Generate device fingerprint
+    // Generate device fingerprints (full + stable for cross-browser detection)
     const deviceFingerprint = generateFingerprint(device_info);
+    const deviceStableFingerprint = generateStableFingerprint(device_info);
+    const clientIp = req.ip || req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.connection?.remoteAddress || '';
 
     await client.query('BEGIN');
 
@@ -109,8 +111,39 @@ router.post('/generate', queueGenerationLimiter, async (req, res) => {
       });
     }
 
-    // VALIDATION 5: Check for existing queue entry today
+    // VALIDATION 4b: ONE DEVICE PER DAY - Prevent same phone from generating multiple queues
+    // Check if this device (fingerprint, stable fingerprint, or IP) already has a queue today
     const today = new Date().toISOString().split('T')[0];
+    
+    const deviceAlreadyUsed = await client.query(`
+      SELECT * FROM queue_entries 
+      WHERE date = $1 AND lga_id = $2
+      AND (
+        device_fingerprint = $3 
+        OR (device_stable_fingerprint IS NOT NULL AND device_stable_fingerprint = $4)
+        OR (client_ip IS NOT NULL AND client_ip = $5)
+      )
+      LIMIT 1
+    `, [today, lga.id, deviceFingerprint, deviceStableFingerprint, clientIp || '']);
+
+    if (deviceAlreadyUsed.rows.length > 0) {
+      const existing = deviceAlreadyUsed.rows[0];
+      await client.query('ROLLBACK');
+      logSecurityEvent(req, 'QUEUE_GENERATION', 'FAILED - Device already used today');
+      return res.status(403).json({
+        error: 'This device has already generated a queue number today',
+        message: 'Each phone can only generate one queue number per day, regardless of browser or state code.',
+        existing_queue: {
+          queue_number: existing.queue_number,
+          state_code: existing.state_code,
+          lga: lga.name,
+          status: existing.status,
+          date: existing.date
+        }
+      });
+    }
+
+    // VALIDATION 5: Check for existing queue entry today (same state code)
     const existingEntry = await client.query(`
       SELECT * FROM queue_entries 
       WHERE state_code = $1 
@@ -162,24 +195,28 @@ router.post('/generate', queueGenerationLimiter, async (req, res) => {
       ON CONFLICT (state_code) DO NOTHING
     `, [normalizedStateCode]);
 
-    // Create queue entry
+    // Create queue entry (include device_stable_fingerprint and client_ip for device-per-day limit)
     const insertResult = await client.query(`
       INSERT INTO queue_entries (
         state_code,
         queue_number,
         lga_id,
         device_fingerprint,
+        device_stable_fingerprint,
+        client_ip,
         latitude,
         longitude,
         status,
         date
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       RETURNING *
     `, [
       normalizedStateCode,
       nextQueueNumber,
       lga.id,
       deviceFingerprint,
+      deviceStableFingerprint,
+      clientIp || null,
       userLat,
       userLon,
       'ACTIVE',
