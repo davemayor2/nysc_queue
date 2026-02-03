@@ -90,14 +90,13 @@ const DeviceFingerprint = {
       screenResolution: info.screenResolution,
       timezone: info.timezone,
       language: info.language,
-      // Additional metadata - used for cross-browser device identification
+      // Additional metadata
       metadata: {
         colorDepth: info.colorDepth,
         hardwareConcurrency: info.hardwareConcurrency,
         deviceMemory: info.deviceMemory,
         maxTouchPoints: info.maxTouchPoints,
-        cookieEnabled: info.cookieEnabled,
-        canvas: info.canvas  // Same device = same canvas fingerprint across browsers
+        cookieEnabled: info.cookieEnabled
       }
     };
   },

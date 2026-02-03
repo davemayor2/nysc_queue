@@ -170,13 +170,21 @@ async function handleQueueGeneration(e) {
     if (response.ok) {
       // Success - show queue number
       showQueueResult(data, stateCode);
-      loadStats();
-    } else if (response.status === 403 && data.existing_queue) {
-      // Device already used today - show their existing queue
-      showDeviceAlreadyUsedError(data);
+      loadStats(); // Refresh statistics
     } else {
-      // Other errors
-      throw new Error(data.error || data.message || 'Failed to generate queue number');
+      // Error from server - Enhanced error handling
+      let errorMessage = data.error || data.message || 'Failed to generate queue number';
+      
+      // Show detailed info for device limit exceeded
+      if (data.details && data.details.policy) {
+        errorMessage += '\n\n📋 Details:\n';
+        errorMessage += `• Your existing queue: #${String(data.details.existing_queue_number).padStart(3, '0')}\n`;
+        errorMessage += `• State code used: ${data.details.existing_state_code}\n`;
+        errorMessage += `• Attempted: ${data.details.attempted_state_code}\n\n`;
+        errorMessage += `⚠️ ${data.details.policy}`;
+      }
+      
+      throw new Error(errorMessage);
     }
 
   } catch (error) {
@@ -203,6 +211,8 @@ function showQueueResult(data, stateCode) {
   const statusBadge = document.getElementById('statusDisplay');
   statusBadge.textContent = data.status;
   statusBadge.className = `value status-badge ${data.status.toLowerCase()}`;
+  
+  document.getElementById('referenceId').textContent = data.reference_id;
 
   // Show QR code if available
   if (data.qr_code) {
@@ -286,12 +296,9 @@ async function loadStats() {
     const data = await response.json();
 
     if (data.stats) {
-      const totalEl = document.getElementById('totalQueued');
-      const activeEl = document.getElementById('activeCount');
-      const usedEl = document.getElementById('usedCount');
-      if (totalEl) totalEl.textContent = data.stats.total_queued || 0;
-      if (activeEl) activeEl.textContent = data.stats.active || 0;
-      if (usedEl) usedEl.textContent = data.stats.used || 0;
+      document.getElementById('totalQueued').textContent = data.stats.total_queued || 0;
+      document.getElementById('activeCount').textContent = data.stats.active || 0;
+      document.getElementById('usedCount').textContent = data.stats.used || 0;
     }
   } catch (error) {
     console.error('Failed to load statistics:', error);
@@ -308,30 +315,6 @@ function showError(message) {
   errorSection.style.display = 'block';
   
   document.getElementById('errorMessage').textContent = message;
-  
-  errorSection.scrollIntoView({ behavior: 'smooth' });
-}
-
-/**
- * Show friendly message when device has already generated a queue today
- */
-function showDeviceAlreadyUsedError(data) {
-  generateSection.style.display = 'none';
-  resultSection.style.display = 'none';
-  errorSection.style.display = 'block';
-  
-  const eq = data.existing_queue;
-  document.getElementById('errorMessage').innerHTML = `
-    <strong>${data.error}</strong>
-    <p style="margin: 15px 0;">${data.message}</p>
-    <div style="background: #e7f3ff; padding: 15px; border-radius: 8px; margin: 15px 0;">
-      <strong>Your existing queue:</strong><br>
-      Queue Number: <strong>${String(eq.queue_number).padStart(3, '0')}</strong><br>
-      State Code: ${eq.state_code}<br>
-      LGA: ${eq.lga}<br>
-      Status: ${eq.status}
-    </div>
-  `;
   
   errorSection.scrollIntoView({ behavior: 'smooth' });
 }
