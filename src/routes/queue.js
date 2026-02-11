@@ -10,14 +10,17 @@ const { generateFingerprint, validateDeviceInfo } = require('../utils/fingerprin
 const { queueGenerationLimiter, verificationLimiter } = require('../middleware/rateLimiter');
 const { logSecurityEvent } = require('../middleware/security');
 
+/** Only skip geofencing when explicitly set to 'true' (local dev). Unset or 'false' = production. */
+const isDevMode = process.env.DEV_MODE === 'true';
+
 /**
  * POST /api/queue/generate
  * Generate a new queue number for a corps member
- * 
- * Security checks:
+ *
+ * Security checks (geofencing skipped when DEV_MODE=true):
  * 1. Validate state code format
- * 2. Validate GPS coordinates
- * 3. Check geofence (user must be within LGA radius)
+ * 2. Validate GPS coordinates (skipped in DEV_MODE; uses LGA center if missing)
+ * 3. Check geofence - user must be within LGA radius (skipped in DEV_MODE)
  * 4. Generate device fingerprint
  * 5. Check for duplicate entries (one per day per state code)
  * 6. Verify device matches if returning user
@@ -43,16 +46,19 @@ router.post('/generate', queueGenerationLimiter, async (req, res) => {
     }
     const normalizedStateCode = stateCodeValidation.normalized;
 
-    // VALIDATION 2: GPS Coordinates Format
-    const locationValidation = validateLocation(latitude, longitude);
-    if (!locationValidation.valid) {
-      logSecurityEvent(req, 'QUEUE_GENERATION', `FAILED - ${locationValidation.message}`);
-      return res.status(400).json({
-        error: locationValidation.message
-      });
+    // VALIDATION 2: GPS Coordinates (skipped in DEV_MODE; enforced in production)
+    let userLat, userLon;
+    if (!isDevMode) {
+      const locationValidation = validateLocation(latitude, longitude);
+      if (!locationValidation.valid) {
+        logSecurityEvent(req, 'QUEUE_GENERATION', `FAILED - ${locationValidation.message}`);
+        return res.status(400).json({
+          error: locationValidation.message
+        });
+      }
+      userLat = locationValidation.latitude;
+      userLon = locationValidation.longitude;
     }
-    const userLat = locationValidation.latitude;
-    const userLon = locationValidation.longitude;
 
     // VALIDATION 3: Device Info
     if (!device_info) {
@@ -85,28 +91,42 @@ router.post('/generate', queueGenerationLimiter, async (req, res) => {
     }
 
     const lga = lgaResult.rows[0];
-    
-    // Check if user is within geofence
-    const geofenceCheck = isWithinGeofence(
-      userLat,
-      userLon,
-      parseFloat(lga.latitude),
-      parseFloat(lga.longitude),
-      lga.radius_meters
-    );
 
-    if (!geofenceCheck.isWithin) {
-      await client.query('ROLLBACK');
-      logSecurityEvent(req, 'QUEUE_GENERATION', `FAILED - Outside geofence (${geofenceCheck.distance}m away)`);
-      return res.status(403).json({
-        error: 'You are outside the allowed LGA area',
-        details: {
-          lga: lga.name,
-          your_distance: `${geofenceCheck.distance} meters away`,
-          allowed_radius: `${geofenceCheck.allowed} meters`,
-          message: 'You must be physically present at the LGA to generate a queue number'
-        }
-      });
+    // In DEV_MODE: use LGA center if coords were not validated earlier; skip geofence
+    if (isDevMode) {
+      const loc = validateLocation(latitude, longitude);
+      if (loc.valid) {
+        userLat = loc.latitude;
+        userLon = loc.longitude;
+      } else {
+        userLat = parseFloat(lga.latitude);
+        userLon = parseFloat(lga.longitude);
+      }
+    }
+
+    // Check if user is within geofence (skipped when DEV_MODE=true)
+    if (!isDevMode) {
+      const geofenceCheck = isWithinGeofence(
+        userLat,
+        userLon,
+        parseFloat(lga.latitude),
+        parseFloat(lga.longitude),
+        lga.radius_meters
+      );
+
+      if (!geofenceCheck.isWithin) {
+        await client.query('ROLLBACK');
+        logSecurityEvent(req, 'QUEUE_GENERATION', `FAILED - Outside geofence (${geofenceCheck.distance}m away)`);
+        return res.status(403).json({
+          error: 'You are outside the allowed LGA area',
+          details: {
+            lga: lga.name,
+            your_distance: `${geofenceCheck.distance} meters away`,
+            allowed_radius: `${geofenceCheck.allowed} meters`,
+            message: 'You must be physically present at the LGA to generate a queue number'
+          }
+        });
+      }
     }
 
     // VALIDATION 5: Check if this DEVICE has already generated a queue today

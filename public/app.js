@@ -114,7 +114,8 @@ function showLocationError(message) {
 // STATE CODE INPUT MASK
 // ============================================
 
-const STATE_CODE_MASK = '__/___/____';
+// Mask: 2 letters / 3 (YYB) / 4 or 5 digits
+const STATE_CODE_MASK = '__/___/_____';
 
 /**
  * Initialize state code input with mask
@@ -238,8 +239,8 @@ function handleStateCodeKeydown(e) {
     } else if (insertPos === 5 && /[A-C]/.test(char)) {
       // Position 5: letter A-C (batch)
       isValid = true;
-    } else if (insertPos >= 7 && /[0-9]/.test(char)) {
-      // Positions 7+: digits (number)
+    } else if (insertPos >= 7 && insertPos <= 11 && /[0-9]/.test(char)) {
+      // Positions 7-11: digits (number, 4 or 5 digits)
       isValid = true;
     }
     
@@ -258,17 +259,38 @@ function handleStateCodeKeydown(e) {
   }
 }
 
+/**
+ * Normalize state code for submit: allow 4 or 5 digits in number part.
+ * Strips underscores from each part; returns null if invalid.
+ * @param {string} raw - Raw masked value (e.g. NY/23A/1234_ or NY/23A/12345)
+ * @returns {string|null} - Normalized code (e.g. NY/23A/1234) or null
+ */
+function normalizeStateCodeForSubmit(raw) {
+  if (!raw || typeof raw !== 'string') return null;
+  const parts = raw.trim().toUpperCase().split('/');
+  if (parts.length !== 3) return null;
+  const state = parts[0].replace(/_/g, '');
+  const yyb = parts[1].replace(/_/g, '');
+  const number = parts[2].replace(/_/g, '');
+  if (state.length !== 2 || yyb.length !== 3) return null;
+  if (number.length < 4 || number.length > 5) return null;
+  if (!/^[A-Z]{2}$/.test(state) || !/^\d{2}[A-C]$/.test(yyb) || !/^\d+$/.test(number)) return null;
+  return state + '/' + yyb + '/' + number;
+}
+
 function setupEventListeners() {
+  // Only attach listeners when DOM is ready (called from DOMContentLoaded)
+  if (!queueForm) return;
+
   // Queue generation form
   queueForm.addEventListener('submit', handleQueueGeneration);
-  
+
   // State code input mask
   const stateCodeInput = document.getElementById('stateCode');
-  initializeStateCodeMask();
-  stateCodeInput.addEventListener('keydown', handleStateCodeKeydown);
-  
-  // Handle click - move cursor away from slashes
-  stateCodeInput.addEventListener('click', function() {
+  if (stateCodeInput) {
+    initializeStateCodeMask();
+    stateCodeInput.addEventListener('keydown', handleStateCodeKeydown);
+    stateCodeInput.addEventListener('click', function() {
     const pos = this.selectionStart;
     if (this.value[pos] === '/') {
       this.setSelectionRange(pos + 1, pos + 1);
@@ -296,7 +318,8 @@ function setupEventListeners() {
     
     stateCodeInput.value = value;
   });
-  
+  }
+
   // Retry button
   document.getElementById('retryBtn')?.addEventListener('click', resetForm);
   
@@ -325,13 +348,12 @@ async function handleQueueGeneration(e) {
 
   const stateCodeRaw = document.getElementById('stateCode').value.trim().toUpperCase();
   
-  // Check if state code is complete (no underscores)
-  if (!stateCodeRaw || stateCodeRaw.includes('_')) {
-    showError('Please complete your NYSC state code');
+  // Normalize: allow 4 or 5 digits in number part (strip trailing underscores)
+  const stateCode = normalizeStateCodeForSubmit(stateCodeRaw);
+  if (!stateCode) {
+    showError('Please complete your NYSC state code (4 or 5 digits in the number part)');
     return;
   }
-  
-  const stateCode = stateCodeRaw;
 
   // Show loading
   queueForm.style.display = 'none';
@@ -381,37 +403,70 @@ async function handleQueueGeneration(e) {
   }
 }
 
+/**
+ * Format queue result date/time for display.
+ * Date: "Monday, 10 February 2026", Time: "5:08 PM"
+ */
+function formatQueueDateTime(isoDateString) {
+  const d = new Date(isoDateString);
+  const dateStr = d.toLocaleDateString('en-GB', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric'
+  });
+  const timeStr = d.toLocaleTimeString('en-GB', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  }).replace(/\b(am|pm)\b/gi, (m) => m.toUpperCase());
+  return { dateStr, timeStr };
+}
+
 function showQueueResult(data, stateCode) {
-  // Hide other sections
-  generateSection.style.display = 'none';
-  errorSection.style.display = 'none';
-  
-  // Populate result data
-  document.getElementById('queueNumber').textContent = 
-    String(data.queue_number).padStart(3, '0');
-  document.getElementById('lgaName').textContent = data.lga;
-  document.getElementById('stateCodeDisplay').textContent = stateCode;
-  document.getElementById('dateDisplay').textContent = 
-    new Date(data.date).toLocaleDateString();
-  
+  // Hide other sections (only if elements exist)
+  if (generateSection) generateSection.style.display = 'none';
+  if (errorSection) errorSection.style.display = 'none';
+
+  // Populate result data with null checks so updates only run when DOM is ready
+  const queueNumberEl = document.getElementById('queueNumber');
+  if (queueNumberEl) queueNumberEl.textContent = String(data.queue_number).padStart(3, '0');
+
+  const lgaNameEl = document.getElementById('lgaName');
+  if (lgaNameEl) lgaNameEl.textContent = data.lga || '-';
+
+  const stateCodeDisplayEl = document.getElementById('stateCodeDisplay');
+  if (stateCodeDisplayEl) stateCodeDisplayEl.textContent = stateCode || '-';
+
+  const { dateStr, timeStr } = formatQueueDateTime(data.date || new Date().toISOString());
+  const dateDisplayEl = document.getElementById('dateDisplay');
+  if (dateDisplayEl) dateDisplayEl.textContent = dateStr;
+  const timeDisplayEl = document.getElementById('timeDisplay');
+  if (timeDisplayEl) timeDisplayEl.textContent = timeStr;
+
   const statusBadge = document.getElementById('statusDisplay');
-  statusBadge.textContent = data.status;
-  statusBadge.className = `value status-badge ${data.status.toLowerCase()}`;
-  
-  document.getElementById('referenceId').textContent = data.reference_id;
+  if (statusBadge) {
+    statusBadge.textContent = data.status || '-';
+    statusBadge.className = `value status-badge ${(data.status || '').toLowerCase()}`;
+  }
+
+  const referenceIdEl = document.getElementById('referenceId');
+  if (referenceIdEl) referenceIdEl.textContent = data.reference_id || '-';
 
   // Show QR code if available
   if (data.qr_code) {
     const qrCodeImg = document.getElementById('qrCode');
-    qrCodeImg.src = data.qr_code;
-    qrCodeImg.style.display = 'block';
+    if (qrCodeImg) {
+      qrCodeImg.src = data.qr_code;
+      qrCodeImg.style.display = 'block';
+    }
   }
 
   // Show result section
-  resultSection.style.display = 'block';
-  
-  // Scroll to result
-  resultSection.scrollIntoView({ behavior: 'smooth' });
+  if (resultSection) {
+    resultSection.style.display = 'block';
+    resultSection.scrollIntoView({ behavior: 'smooth' });
+  }
 }
 
 // ============================================

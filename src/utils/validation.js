@@ -5,9 +5,9 @@
 
 /**
  * Validate NYSC State Code format
- * Expected format: NY/23A/1234 or NY/23B/5678
+ * Expected format: NY/23A/1234 (4 digits) or NY/23A/12345 (5 digits)
  * Pattern: NY/[Year][Batch]/[Number]
- * 
+ *
  * @param {string} stateCode - NYSC state code to validate
  * @returns {Object} - { valid: boolean, message: string }
  */
@@ -22,17 +22,17 @@ function validateStateCode(stateCode) {
   // Remove extra whitespace
   stateCode = stateCode.trim().toUpperCase();
 
-  // Pattern: NY/YYB/NNNN (e.g., NY/23A/1234)
+  // Pattern: NY/YYB/NNNN or NNNNN (e.g., NY/23A/1234 or NY/23A/12345)
   // NY = State code (2 letters)
   // YY = Year (2 digits)
   // B = Batch (A, B, or C)
-  // NNNN = Number (1-5 digits)
-  const pattern = /^[A-Z]{2}\/\d{2}[A-C]\/\d{1,5}$/;
+  // NNNN/NNNNN = Number (4 or 5 digits)
+  const pattern = /^[A-Z]{2}\/\d{2}[A-C]\/\d{4,5}$/;
 
   if (!pattern.test(stateCode)) {
     return {
       valid: false,
-      message: 'Invalid state code format. Expected: NY/23A/1234'
+      message: 'Invalid state code format. Expected: NY/23A/1234 or NY/23A/12345 (4 or 5 digits)'
     };
   }
 

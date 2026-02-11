@@ -32,13 +32,13 @@
               type="text" 
               id="stateCode" 
               name="stateCode"
-              value="__/___/____"
+              value="__/___/_____"
               required
-              maxlength="11"
-              title="Format: NY/23A/1234"
+              maxlength="12"
+              title="Format: NY/23A/1234 or NY/23A/12345"
               autocomplete="off"
             >
-            <small>Format: STATE/YEAR+BATCH/NUMBER (e.g., NY/23A/1234)</small>
+            <small>Format: STATE/YEAR+BATCH/NUMBER — 4 or 5 digits (e.g., NY/23A/1234 or NY/23A/12345)</small>
           </div>
 
           <div class="location-info" id="locationInfo">
@@ -76,12 +76,20 @@
               <span class="value" id="lgaName">-</span>
             </div>
             <div class="detail-item">
-              <span class="label">Generated On:</span>
-              <span class="value" id="generatedOnDisplay">-</span>
+              <span class="label">Date:</span>
+              <span class="value" id="dateDisplay">-</span>
+            </div>
+            <div class="detail-item">
+              <span class="label">Time:</span>
+              <span class="value" id="timeDisplay">-</span>
             </div>
             <div class="detail-item">
               <span class="label">Status:</span>
               <span class="value status-badge" id="statusDisplay">-</span>
+            </div>
+            <div class="detail-item">
+              <span class="label">Reference ID:</span>
+              <span class="value" id="referenceId">-</span>
             </div>
           </div>
 
