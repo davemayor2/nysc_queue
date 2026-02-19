@@ -36,13 +36,14 @@
               type="text" 
               id="stateCode" 
               name="stateCode"
-              value="__/___/_____"
+              placeholder="e.g. NY/23A/1234 or NY/23A/12345"
               required
-              maxlength="12"
+              maxlength="13"
               title="Format: NY/23A/1234 or NY/23A/12345"
               autocomplete="off"
+              spellcheck="false"
             >
-            <small>Format: STATE/YEAR+BATCH/NUMBER — 4 or 5 digits (e.g., NY/23A/1234 or NY/23A/12345)</small>
+            <small>Enter your NYSC state code exactly as printed (e.g. NY/23A/1234 or NY/23A/12345)</small>
           </div>
 
           <div class="location-info" id="locationInfo">
@@ -72,20 +73,20 @@
 
           <div class="result-details">
             <div class="detail-item">
+              <span class="label">Date:</span>
+              <span class="value" id="dateDisplay">-</span>
+            </div>
+            <div class="detail-item">
+              <span class="label">Time (WAT):</span>
+              <span class="value" id="timeDisplay">-</span>
+            </div>
+            <div class="detail-item">
               <span class="label">State Code:</span>
               <span class="value" id="stateCodeDisplay">-</span>
             </div>
             <div class="detail-item">
               <span class="label">LGA:</span>
               <span class="value" id="lgaName">-</span>
-            </div>
-            <div class="detail-item">
-              <span class="label">Date:</span>
-              <span class="value" id="dateDisplay">-</span>
-            </div>
-            <div class="detail-item">
-              <span class="label">Time:</span>
-              <span class="value" id="timeDisplay">-</span>
             </div>
             <div class="detail-item">
               <span class="label">Status:</span>

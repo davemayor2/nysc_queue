@@ -111,171 +111,23 @@ function showLocationError(message) {
 // ============================================
 
 // ============================================
-// STATE CODE INPUT MASK
+// STATE CODE INPUT
 // ============================================
 
-// Mask: 2 letters / 3 (YYB) / 4 or 5 digits
-const STATE_CODE_MASK = '__/___/_____';
-
 /**
- * Initialize state code input with mask
- */
-function initializeStateCodeMask() {
-  const input = document.getElementById('stateCode');
-  if (input) {
-    // Set initial cursor position
-    setTimeout(() => {
-      input.setSelectionRange(0, 0);
-    }, 0);
-  }
-}
-
-/**
- * Handles typing in the masked state code field
- */
-function handleStateCodeKeydown(e) {
-  const input = e.target;
-  const key = e.key;
-  let cursorPos = input.selectionStart;
-  let value = input.value;
-  
-  // Allow special keys
-  if (['Tab', 'Shift', 'Control', 'Alt', 'Meta', 'CapsLock'].includes(key)) {
-    return;
-  }
-  
-  // Handle backspace
-  if (key === 'Backspace') {
-    e.preventDefault();
-    
-    // Find previous editable position
-    let deletePos = cursorPos - 1;
-    while (deletePos >= 0 && value[deletePos] === '/') {
-      deletePos--;
-    }
-    
-    if (deletePos >= 0) {
-      const newValue = value.substring(0, deletePos) + '_' + value.substring(deletePos + 1);
-      input.value = newValue;
-      input.setSelectionRange(deletePos, deletePos);
-    }
-    return;
-  }
-  
-  // Handle delete key
-  if (key === 'Delete') {
-    e.preventDefault();
-    
-    let deletePos = cursorPos;
-    while (deletePos < value.length && value[deletePos] === '/') {
-      deletePos++;
-    }
-    
-    if (deletePos < value.length) {
-      const newValue = value.substring(0, deletePos) + '_' + value.substring(deletePos + 1);
-      input.value = newValue;
-      input.setSelectionRange(cursorPos, cursorPos);
-    }
-    return;
-  }
-  
-  // Handle arrow keys
-  if (key === 'ArrowRight') {
-    e.preventDefault();
-    let nextPos = cursorPos + 1;
-    while (nextPos < value.length && value[nextPos] === '/') {
-      nextPos++;
-    }
-    input.setSelectionRange(nextPos, nextPos);
-    return;
-  }
-  
-  if (key === 'ArrowLeft') {
-    e.preventDefault();
-    let prevPos = cursorPos - 1;
-    while (prevPos >= 0 && value[prevPos] === '/') {
-      prevPos--;
-    }
-    if (prevPos >= 0) {
-      input.setSelectionRange(prevPos, prevPos);
-    }
-    return;
-  }
-  
-  if (key === 'Home') {
-    e.preventDefault();
-    input.setSelectionRange(0, 0);
-    return;
-  }
-  
-  if (key === 'End') {
-    e.preventDefault();
-    input.setSelectionRange(value.length, value.length);
-    return;
-  }
-  
-  // Handle regular character input
-  if (key.length === 1) {
-    e.preventDefault();
-    
-    // Skip over slashes to find next input position
-    let insertPos = cursorPos;
-    while (insertPos < value.length && value[insertPos] === '/') {
-      insertPos++;
-    }
-    
-    if (insertPos >= value.length) return;
-    
-    const char = key.toUpperCase();
-    
-    // Validate character based on position
-    let isValid = false;
-    if (insertPos < 2 && /[A-Z]/.test(char)) {
-      // First 2: letters (state code)
-      isValid = true;
-    } else if ((insertPos >= 3 && insertPos <= 4) && /[0-9]/.test(char)) {
-      // Positions 3-4: digits (year)
-      isValid = true;
-    } else if (insertPos === 5 && /[A-C]/.test(char)) {
-      // Position 5: letter A-C (batch)
-      isValid = true;
-    } else if (insertPos >= 7 && insertPos <= 11 && /[0-9]/.test(char)) {
-      // Positions 7-11: digits (number, 4 or 5 digits)
-      isValid = true;
-    }
-    
-    if (isValid) {
-      // Insert character
-      const newValue = value.substring(0, insertPos) + char + value.substring(insertPos + 1);
-      input.value = newValue;
-      
-      // Move cursor to next position (skip slashes)
-      let nextPos = insertPos + 1;
-      while (nextPos < newValue.length && newValue[nextPos] === '/') {
-        nextPos++;
-      }
-      input.setSelectionRange(nextPos, nextPos);
-    }
-  }
-}
-
-/**
- * Normalize state code for submit: allow 4 or 5 digits in number part.
- * Strips underscores from each part; returns null if invalid.
- * @param {string} raw - Raw masked value (e.g. NY/23A/1234_ or NY/23A/12345)
- * @returns {string|null} - Normalized code (e.g. NY/23A/1234) or null
+ * Normalize and validate a free-typed state code for submit.
+ * Trims, uppercases, and checks format: XX/YYB/NNNN or XX/YYB/NNNNN
+ * @param {string} raw - User-typed value (e.g. "ny/23a/1234")
+ * @returns {string|null} - Normalized code (e.g. "NY/23A/1234") or null if invalid
  */
 function normalizeStateCodeForSubmit(raw) {
   if (!raw || typeof raw !== 'string') return null;
-  const parts = raw.trim().toUpperCase().split('/');
+  const normalized = raw.trim().toUpperCase();
+  const parts = normalized.split('/');
   if (parts.length !== 3) return null;
-  const state = parts[0].replace(/_/g, '');
-  const yyb = parts[1].replace(/_/g, '');
-  const number = parts[2].replace(/_/g, '');
-  if (state.length !== 2 || yyb.length !== 3) return null;
-  if (number.length < 4 || number.length > 5) return null;
-  if (!/^[A-Z]{2}$/.test(state) || !/^\d{2}[A-C]$/.test(yyb) || !/^\d+$/.test(number)) return null;
-  return state + '/' + yyb + '/' + number;
+  const [state, yyb, number] = parts;
+  if (!/^[A-Z]{2}$/.test(state) || !/^\d{2}[A-C]$/.test(yyb) || !/^\d{4,5}$/.test(number)) return null;
+  return normalized;
 }
 
 function setupEventListeners() {
@@ -284,41 +136,6 @@ function setupEventListeners() {
 
   // Queue generation form
   queueForm.addEventListener('submit', handleQueueGeneration);
-
-  // State code input mask
-  const stateCodeInput = document.getElementById('stateCode');
-  if (stateCodeInput) {
-    initializeStateCodeMask();
-    stateCodeInput.addEventListener('keydown', handleStateCodeKeydown);
-    stateCodeInput.addEventListener('click', function() {
-    const pos = this.selectionStart;
-    if (this.value[pos] === '/') {
-      this.setSelectionRange(pos + 1, pos + 1);
-    }
-  });
-  
-  // Handle paste in masked input
-  stateCodeInput.addEventListener('paste', (e) => {
-    e.preventDefault();
-    const pastedText = e.clipboardData.getData('text').toUpperCase().replace(/[^A-Z0-9]/g, '');
-    
-    // Insert pasted text character by character
-    let value = stateCodeInput.value;
-    let pos = 0;
-    
-    for (let i = 0; i < pastedText.length && pos < value.length; i++) {
-      while (pos < value.length && value[pos] === '/') {
-        pos++;
-      }
-      if (pos < value.length) {
-        value = value.substring(0, pos) + pastedText[i] + value.substring(pos + 1);
-        pos++;
-      }
-    }
-    
-    stateCodeInput.value = value;
-  });
-  }
 
   // Retry button
   document.getElementById('retryBtn')?.addEventListener('click', resetForm);
@@ -409,13 +226,16 @@ async function handleQueueGeneration(e) {
  */
 function formatQueueDateTime(isoDateString) {
   const d = new Date(isoDateString);
+  // Always display in WAT (West Africa Time = UTC+1), regardless of device timezone
   const dateStr = d.toLocaleDateString('en-GB', {
+    timeZone: 'Africa/Lagos',
     weekday: 'long',
     day: 'numeric',
     month: 'long',
     year: 'numeric'
   });
   const timeStr = d.toLocaleTimeString('en-GB', {
+    timeZone: 'Africa/Lagos',
     hour: 'numeric',
     minute: '2-digit',
     hour12: true
@@ -570,8 +390,9 @@ function resetForm() {
   queueForm.reset();
   queueForm.style.display = 'block';
   
-  // Reset state code mask
-  document.getElementById('stateCode').value = STATE_CODE_MASK;
+  // Clear state code input
+  const stateCodeEl = document.getElementById('stateCode');
+  if (stateCodeEl) stateCodeEl.value = '';
   
   // Request new location
   requestLocation();
