@@ -15,7 +15,7 @@ async function seedDatabase() {
     const lgaName = process.env.DEFAULT_LGA_NAME || 'Ikeja';
     const lgaLat = parseFloat(process.env.DEFAULT_LGA_LAT || '6.6018');
     const lgaLng = parseFloat(process.env.DEFAULT_LGA_LNG || '3.3515');
-    const lgaRadius = parseInt(process.env.DEFAULT_LGA_RADIUS || '100');
+    const lgaRadius = parseInt(process.env.DEFAULT_LGA_RADIUS || '600');
 
     // Insert default LGA (Ikeja, Lagos)
     const result = await client.query(`
