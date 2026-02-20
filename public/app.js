@@ -137,6 +137,16 @@ function setupEventListeners() {
   // Queue generation form
   queueForm.addEventListener('submit', handleQueueGeneration);
 
+  // Auto-uppercase state code as user types
+  const stateCodeInput = document.getElementById('stateCode');
+  if (stateCodeInput) {
+    stateCodeInput.addEventListener('input', function () {
+      const pos = this.selectionStart;
+      this.value = this.value.toUpperCase();
+      this.setSelectionRange(pos, pos);
+    });
+  }
+
   // Retry button
   document.getElementById('retryBtn')?.addEventListener('click', resetForm);
   
