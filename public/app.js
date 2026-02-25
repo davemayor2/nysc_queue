@@ -43,49 +43,119 @@ document.addEventListener('DOMContentLoaded', () => {
 // GPS LOCATION
 // ============================================
 
+/**
+ * Request GPS location using a multi-sample strategy:
+ * 1. First reading unblocks the UI so the user can proceed immediately.
+ * 2. We keep watching for up to MAX_WATCH_MS and replace the stored location
+ *    whenever a MORE ACCURATE reading arrives.
+ * 3. If accuracy is already good (≤ GOOD_ACCURACY_M) we stop early.
+ * This significantly reduces false "Outside LGA" rejections caused by an
+ * initial coarse fix that improves once the device warms up its GPS.
+ */
+const GOOD_ACCURACY_M = 50;   // stop early when accuracy is this good or better
+const MAX_WATCH_MS    = 15000; // keep refining for up to 15 seconds
+
 function requestLocation() {
   if (!navigator.geolocation) {
     showLocationError('GPS is not supported by your browser');
     return;
   }
 
-  locationInfo.innerHTML = '<p>📍 Requesting GPS location...</p>';
-  
+  locationInfo.innerHTML = '<p>📍 Acquiring GPS location…</p>';
+
+  let watchId = null;
+  let watchTimer = null;
+  let gotFirstFix = false;
+
   const options = {
-    enableHighAccuracy: true, // Request high accuracy
-    timeout: 10000, // 10 second timeout
-    maximumAge: 0 // Don't use cached position
+    enableHighAccuracy: true,
+    timeout: 15000,
+    maximumAge: 0
   };
 
-  navigator.geolocation.getCurrentPosition(
-    onLocationSuccess,
-    onLocationError,
-    options
-  );
-}
+  function stopWatch() {
+    if (watchId !== null) {
+      navigator.geolocation.clearWatch(watchId);
+      watchId = null;
+    }
+    if (watchTimer !== null) {
+      clearTimeout(watchTimer);
+      watchTimer = null;
+    }
+  }
 
-function onLocationSuccess(position) {
-  userLocation = {
-    latitude: position.coords.latitude,
-    longitude: position.coords.longitude,
-    accuracy: position.coords.accuracy
-  };
+  function onPosition(position) {
+    const { latitude, longitude, accuracy } = position.coords;
 
-  console.log('GPS Location:', userLocation);
+    // Accept this reading if it is the first or more accurate than what we have
+    if (!gotFirstFix || accuracy < userLocation.accuracy) {
+      userLocation = { latitude, longitude, accuracy };
 
-  locationInfo.innerHTML = `
-    <p>✅ GPS Location Acquired</p>
-    <small>Accuracy: ±${Math.round(userLocation.accuracy)} meters</small>
-  `;
-  locationInfo.classList.add('success');
-  
-  submitBtn.disabled = false;
+      if (!gotFirstFix) {
+        gotFirstFix = true;
+        submitBtn.disabled = false;
+      }
+
+      const accuracyLabel = accuracy <= GOOD_ACCURACY_M
+        ? `±${Math.round(accuracy)} m ✅`
+        : `±${Math.round(accuracy)} m (refining…)`;
+
+      locationInfo.className = 'success';
+      locationInfo.innerHTML = `
+        <p>📍 GPS Location Acquired</p>
+        <small>Accuracy: ${accuracyLabel}</small>
+      `;
+
+      console.log('GPS fix updated:', userLocation);
+    }
+
+    // Stop early once accuracy is good enough
+    if (accuracy <= GOOD_ACCURACY_M) {
+      stopWatch();
+      locationInfo.innerHTML = `
+        <p>✅ GPS Location Ready</p>
+        <small>Accuracy: ±${Math.round(accuracy)} m</small>
+      `;
+    }
+  }
+
+  function onError(error) {
+    if (gotFirstFix) return; // already have a fix — ignore subsequent errors
+
+    let message = 'Unable to get your location';
+    switch (error.code) {
+      case error.PERMISSION_DENIED:
+        message = 'Location permission denied. Please enable GPS access.';
+        break;
+      case error.POSITION_UNAVAILABLE:
+        message = 'Location information unavailable. Please try again outdoors.';
+        break;
+      case error.TIMEOUT:
+        message = 'Location request timed out. Please try again.';
+        break;
+    }
+    stopWatch();
+    showLocationError(message);
+  }
+
+  // Start watching — the first fix unblocks the form, subsequent fixes improve accuracy
+  watchId = navigator.geolocation.watchPosition(onPosition, onError, options);
+
+  // Auto-stop the watch after MAX_WATCH_MS regardless
+  watchTimer = setTimeout(() => {
+    stopWatch();
+    if (gotFirstFix) {
+      locationInfo.innerHTML = `
+        <p>✅ GPS Location Ready</p>
+        <small>Accuracy: ±${Math.round(userLocation.accuracy)} m</small>
+      `;
+    }
+  }, MAX_WATCH_MS);
 }
 
 function onLocationError(error) {
   let message = 'Unable to get your location';
-  
-  switch(error.code) {
+  switch (error.code) {
     case error.PERMISSION_DENIED:
       message = 'Location permission denied. Please enable GPS access.';
       break;
@@ -96,7 +166,6 @@ function onLocationError(error) {
       message = 'Location request timed out. Please try again.';
       break;
   }
-
   showLocationError(message);
 }
 
@@ -196,6 +265,7 @@ async function handleQueueGeneration(e) {
         state_code: stateCode,
         latitude: userLocation.latitude,
         longitude: userLocation.longitude,
+        gps_accuracy: userLocation.accuracy,
         device_info: deviceInfo
       })
     });

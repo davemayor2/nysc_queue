@@ -28,20 +28,37 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
 }
 
 /**
- * Check if user is within allowed radius of LGA center
+ * Check if user is within allowed radius of LGA center.
+ *
+ * GPS receivers can report a position that is offset from the true position by
+ * up to their reported accuracy value. To avoid falsely rejecting users who are
+ * physically inside the LGA but whose device reports a slightly drifted position,
+ * we subtract the device-reported accuracy from the measured distance before
+ * comparing it against the radius.  The adjustment is capped at MAX_ACCURACY_ADJUST
+ * so that an artificially inflated accuracy value cannot be used to bypass the check.
+ *
  * @param {number} userLat - User's latitude
  * @param {number} userLon - User's longitude
  * @param {number} lgaLat - LGA center latitude
  * @param {number} lgaLon - LGA center longitude
  * @param {number} radiusMeters - Allowed radius in meters
- * @returns {Object} - { isWithin: boolean, distance: number }
+ * @param {number} [gpsAccuracy=0] - Device-reported GPS accuracy in meters (1-sigma)
+ * @returns {Object} - { isWithin: boolean, distance: number, effectiveDistance: number, allowed: number }
  */
-function isWithinGeofence(userLat, userLon, lgaLat, lgaLon, radiusMeters) {
+const MAX_ACCURACY_ADJUST = 150; // cap adjustment to prevent abuse
+
+function isWithinGeofence(userLat, userLon, lgaLat, lgaLon, radiusMeters, gpsAccuracy = 0) {
   const distance = calculateDistance(userLat, userLon, lgaLat, lgaLon);
-  
+
+  // Clamp accuracy adjustment between 0 and the cap
+  const accuracyAdjust = Math.min(Math.max(gpsAccuracy, 0), MAX_ACCURACY_ADJUST);
+  const effectiveDistance = Math.max(0, distance - accuracyAdjust);
+
   return {
-    isWithin: distance <= radiusMeters,
+    isWithin: effectiveDistance <= radiusMeters,
     distance: Math.round(distance),
+    effectiveDistance: Math.round(effectiveDistance),
+    accuracyAdjust: Math.round(accuracyAdjust),
     allowed: radiusMeters
   };
 }

@@ -33,6 +33,7 @@ router.post('/generate', queueGenerationLimiter, async (req, res) => {
       state_code,
       latitude,
       longitude,
+      gps_accuracy,
       device_info
     } = req.body;
 
@@ -106,22 +107,27 @@ router.post('/generate', queueGenerationLimiter, async (req, res) => {
 
     // Check if user is within geofence (skipped when DEV_MODE=true)
     if (!isDevMode) {
+      const accuracyMeters = typeof gps_accuracy === 'number' && gps_accuracy > 0 ? gps_accuracy : 0;
+
       const geofenceCheck = isWithinGeofence(
         userLat,
         userLon,
         parseFloat(lga.latitude),
         parseFloat(lga.longitude),
-        lga.radius_meters
+        lga.radius_meters,
+        accuracyMeters
       );
 
       if (!geofenceCheck.isWithin) {
         await client.query('ROLLBACK');
-        logSecurityEvent(req, 'QUEUE_GENERATION', `FAILED - Outside geofence (${geofenceCheck.distance}m away)`);
+        logSecurityEvent(req, 'QUEUE_GENERATION', `FAILED - Outside geofence (${geofenceCheck.distance}m away, effective ${geofenceCheck.effectiveDistance}m after ±${geofenceCheck.accuracyAdjust}m GPS adjust)`);
         return res.status(403).json({
           error: 'You are outside the allowed LGA area',
           details: {
             lga: lga.name,
             your_distance: `${geofenceCheck.distance} meters away`,
+            effective_distance: `${geofenceCheck.effectiveDistance} meters (after GPS accuracy adjustment)`,
+            gps_accuracy: `±${geofenceCheck.accuracyAdjust} meters`,
             allowed_radius: `${geofenceCheck.allowed} meters`,
             message: 'You must be physically present at the LGA to generate a queue number'
           }
