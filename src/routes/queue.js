@@ -76,7 +76,10 @@ router.post('/generate', queueGenerationLimiter, async (req, res) => {
       });
     }
 
-    // Generate device fingerprint
+    // Extract the persistent localStorage UUID (sent alongside hardware signals)
+    const deviceId = device_info.deviceId || null;
+
+    // Generate device fingerprint (now includes UUID + canvas + hardware signals)
     const deviceFingerprint = generateFingerprint(device_info);
 
     await client.query('BEGIN');
@@ -136,14 +139,21 @@ router.post('/generate', queueGenerationLimiter, async (req, res) => {
     }
 
     // VALIDATION 5: Check if this DEVICE has already generated a queue today
-    // ONE QUEUE PER DEVICE PER DAY - regardless of state code
+    // Match on device_id (persistent UUID) OR device_fingerprint (hardware hash).
+    // Using OR ensures we catch the device correctly even if localStorage was
+    // cleared (fingerprint still matches) or if the fingerprint changes (UUID still matches).
     const today = new Date().toISOString().split('T')[0];
+
     const deviceCheckResult = await client.query(`
-      SELECT * FROM queue_entries 
-      WHERE device_fingerprint = $1 
-      AND date = $2 
-      AND lga_id = $3
-    `, [deviceFingerprint, today, lga.id]);
+      SELECT * FROM queue_entries
+      WHERE date = $1
+      AND lga_id = $2
+      AND (
+        device_fingerprint = $3
+        OR ($4::varchar IS NOT NULL AND device_id = $4)
+      )
+      LIMIT 1
+    `, [today, lga.id, deviceFingerprint, deviceId]);
 
     if (deviceCheckResult.rows.length > 0) {
       const existing = deviceCheckResult.rows[0];
@@ -223,17 +233,19 @@ router.post('/generate', queueGenerationLimiter, async (req, res) => {
         queue_number,
         lga_id,
         device_fingerprint,
+        device_id,
         latitude,
         longitude,
         status,
         date
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       RETURNING *
     `, [
       normalizedStateCode,
       nextQueueNumber,
       lga.id,
       deviceFingerprint,
+      deviceId,
       userLat,
       userLon,
       'ACTIVE',

@@ -43,6 +43,7 @@ async function runMigrations() {
         queue_number INTEGER NOT NULL,
         lga_id UUID NOT NULL REFERENCES lgas(id) ON DELETE CASCADE,
         device_fingerprint VARCHAR(255) NOT NULL,
+        device_id VARCHAR(36),
         latitude DECIMAL(10, 8) NOT NULL,
         longitude DECIMAL(11, 8) NOT NULL,
         status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'USED')),
@@ -56,6 +57,16 @@ async function runMigrations() {
         -- Ensure queue numbers are unique per LGA per day
         UNIQUE(queue_number, lga_id, date)
       );
+    `);
+
+    // Add device_id column to existing tables (safe to run on already-migrated DBs)
+    await client.query(`
+      ALTER TABLE queue_entries ADD COLUMN IF NOT EXISTS device_id VARCHAR(36);
+    `);
+
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_queue_entries_device_id
+      ON queue_entries(device_id);
     `);
     console.log('✓ Queue Entries table created');
 
