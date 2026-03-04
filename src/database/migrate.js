@@ -68,6 +68,20 @@ async function runMigrations() {
       CREATE INDEX IF NOT EXISTS idx_queue_entries_device_id
       ON queue_entries(device_id);
     `);
+
+    // Add audit columns for admin-generated entries (safe on already-migrated DBs)
+    await client.query(`
+      ALTER TABLE queue_entries ADD COLUMN IF NOT EXISTS source VARCHAR(10) NOT NULL DEFAULT 'self';
+    `);
+
+    await client.query(`
+      ALTER TABLE queue_entries ADD COLUMN IF NOT EXISTS admin_reason VARCHAR(100);
+    `);
+
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_queue_entries_source
+      ON queue_entries(source);
+    `);
     console.log('✓ Queue Entries table created');
 
     // Create indexes for performance optimization

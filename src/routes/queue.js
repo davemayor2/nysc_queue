@@ -237,8 +237,9 @@ router.post('/generate', queueGenerationLimiter, async (req, res) => {
         latitude,
         longitude,
         status,
-        date
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        date,
+        source
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'self')
       RETURNING *
     `, [
       normalizedStateCode,
@@ -398,6 +399,7 @@ router.get('/stats', async (req, res) => {
         COUNT(*) as total_queued,
         COUNT(*) FILTER (WHERE qe.status = 'ACTIVE') as active,
         COUNT(*) FILTER (WHERE qe.status = 'USED') as used,
+        COUNT(*) FILTER (WHERE qe.source = 'admin') as admin_generated,
         MAX(qe.queue_number) as highest_number
       FROM queue_entries qe
       JOIN lgas l ON qe.lga_id = l.id
@@ -420,6 +422,182 @@ router.get('/stats', async (req, res) => {
     res.status(500).json({
       error: 'Failed to fetch statistics'
     });
+  }
+});
+
+/**
+ * POST /api/queue/admin-generate
+ * Manually generate a queue number for a corps member — admin use only.
+ *
+ * Required body fields:
+ *   admin_pin   {string}  — must match ADMIN_PIN env variable
+ *   state_code  {string}  — corps member NYSC state code
+ *   reason      {string}  — why manual generation is needed
+ *
+ * Behaviour:
+ * - PIN is validated server-side
+ * - If the state code already has a queue today, the existing entry is returned
+ * - A daily admin-generated cap of 50 numbers is enforced
+ * - Entry is recorded with source='admin' and admin_reason for auditing
+ */
+router.post('/admin-generate', async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const { admin_pin, state_code, reason } = req.body;
+
+    // Validate admin PIN server-side
+    if (!admin_pin || admin_pin !== process.env.ADMIN_PIN) {
+      logSecurityEvent(req, 'ADMIN_GENERATE', 'FAILED - Invalid admin PIN');
+      return res.status(401).json({ error: 'Invalid admin PIN' });
+    }
+
+    // Validate reason
+    const validReasons = [
+      'GPS failure',
+      'Broken/no phone',
+      'App error',
+      'Device blocked in error',
+      'Other'
+    ];
+    if (!reason || !validReasons.includes(reason)) {
+      return res.status(400).json({
+        error: 'A valid reason is required',
+        valid_reasons: validReasons
+      });
+    }
+
+    // Validate state code
+    const stateCodeValidation = validateStateCode(state_code);
+    if (!stateCodeValidation.valid) {
+      return res.status(400).json({ error: stateCodeValidation.message });
+    }
+    const normalizedStateCode = stateCodeValidation.normalized;
+
+    await client.query('BEGIN');
+
+    // Fetch LGA
+    const lgaResult = await client.query('SELECT * FROM lgas LIMIT 1');
+    if (lgaResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(503).json({ error: 'No LGA configured' });
+    }
+    const lga = lgaResult.rows[0];
+    const today = new Date().toISOString().split('T')[0];
+
+    // Enforce daily admin-override cap (max 50 per day)
+    const adminCountResult = await client.query(`
+      SELECT COUNT(*) as count FROM queue_entries
+      WHERE date = $1 AND lga_id = $2 AND source = 'admin'
+    `, [today, lga.id]);
+    const adminCount = parseInt(adminCountResult.rows[0].count, 10);
+
+    if (adminCount >= 50) {
+      await client.query('ROLLBACK');
+      logSecurityEvent(req, 'ADMIN_GENERATE', 'FAILED - Daily admin cap reached');
+      return res.status(429).json({
+        error: 'Daily admin override limit reached (50 per day)',
+        admin_generated_today: adminCount
+      });
+    }
+
+    // If state code already has a queue today, return existing entry
+    const existingResult = await client.query(`
+      SELECT qe.*, l.name as lga_name FROM queue_entries qe
+      JOIN lgas l ON qe.lga_id = l.id
+      WHERE qe.state_code = $1 AND qe.date = $2 AND qe.lga_id = $3
+    `, [normalizedStateCode, today, lga.id]);
+
+    if (existingResult.rows.length > 0) {
+      const existing = existingResult.rows[0];
+      await client.query('ROLLBACK');
+      logSecurityEvent(req, 'ADMIN_GENERATE', `INFO - Returned existing queue for ${normalizedStateCode}`);
+      return res.status(200).json({
+        message: 'This state code already has a queue number for today',
+        queue_number: existing.queue_number,
+        lga: existing.lga_name,
+        reference_id: existing.id,
+        status: existing.status,
+        date: existing.date,
+        source: existing.source
+      });
+    }
+
+    // Generate next queue number
+    const queueNumberResult = await client.query(`
+      SELECT COALESCE(MAX(queue_number), 0) + 1 as next_number
+      FROM queue_entries WHERE lga_id = $1 AND date = $2
+    `, [lga.id, today]);
+    const nextQueueNumber = queueNumberResult.rows[0].next_number;
+
+    // Unique fingerprint per admin entry — prevents collision with self-generated entries
+    const crypto = require('crypto');
+    const adminFingerprint = crypto
+      .createHash('sha256')
+      .update(`admin|${normalizedStateCode}|${today}|${Date.now()}`)
+      .digest('hex');
+
+    // Insert corps member record if not yet registered
+    await client.query(`
+      INSERT INTO corps_members (state_code) VALUES ($1)
+      ON CONFLICT (state_code) DO NOTHING
+    `, [normalizedStateCode]);
+
+    // Insert queue entry with source='admin'
+    const insertResult = await client.query(`
+      INSERT INTO queue_entries (
+        state_code, queue_number, lga_id,
+        device_fingerprint, device_id,
+        latitude, longitude,
+        status, date, source, admin_reason
+      ) VALUES ($1, $2, $3, $4, NULL, $5, $6, 'ACTIVE', $7, 'admin', $8)
+      RETURNING *
+    `, [
+      normalizedStateCode,
+      nextQueueNumber,
+      lga.id,
+      adminFingerprint,
+      parseFloat(lga.latitude),
+      parseFloat(lga.longitude),
+      today,
+      reason
+    ]);
+
+    await client.query('COMMIT');
+
+    const entry = insertResult.rows[0];
+    logSecurityEvent(req, 'ADMIN_GENERATE', `SUCCESS - Queue #${nextQueueNumber} for ${normalizedStateCode} (reason: ${reason})`);
+
+    // Generate QR code
+    const QRCode = require('qrcode');
+    const qrCode = await QRCode.toDataURL(JSON.stringify({
+      ref: entry.id,
+      queue: nextQueueNumber,
+      lga: lga.name,
+      date: today
+    }));
+
+    res.status(201).json({
+      success: true,
+      message: 'Queue number manually generated by admin',
+      queue_number: nextQueueNumber,
+      lga: lga.name,
+      reference_id: entry.id,
+      status: 'ACTIVE',
+      date: entry.date,
+      source: 'admin',
+      reason,
+      admin_generated_today: adminCount + 1,
+      qr_code: qrCode
+    });
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Admin generate error:', error);
+    logSecurityEvent(req, 'ADMIN_GENERATE', `ERROR - ${error.message}`);
+    res.status(500).json({ error: 'Failed to generate queue number', message: 'Please try again' });
+  } finally {
+    client.release();
   }
 });
 

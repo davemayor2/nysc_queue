@@ -4,7 +4,7 @@
  */
 
 const API_BASE_URL = window.location.origin + '/api';
-const ADMIN_PIN = '1234'; // This will be validated against backend eventually
+const ADMIN_PIN = '2324';
 
 // ============================================
 // PIN AUTHENTICATION
@@ -34,6 +34,20 @@ function showAdminPanel() {
   document.getElementById('pinOverlay').style.display = 'none';
   document.getElementById('adminContent').style.display = 'block';
   loadStats();
+  loadAdminOverrideCount();
+}
+
+async function loadAdminOverrideCount() {
+  try {
+    const response = await fetch(`${API_BASE_URL}/queue/stats`);
+    const data = await response.json();
+    if (data.stats && data.stats.admin_generated !== undefined) {
+      const countEl = document.getElementById('adminOverrideCount');
+      if (countEl) countEl.textContent = data.stats.admin_generated;
+    }
+  } catch (_) {
+    // silently ignore — non-critical UI element
+  }
 }
 
 function setupEventListeners() {
@@ -42,7 +56,13 @@ function setupEventListeners() {
   if (pinForm) {
     pinForm.addEventListener('submit', handlePinSubmission);
   }
-  
+
+  // Manual generation form
+  const manualForm = document.getElementById('manualGenerateForm');
+  if (manualForm) {
+    manualForm.addEventListener('submit', handleManualGenerate);
+  }
+
   // Verification form
   const verifyForm = document.getElementById('verifyForm');
   if (verifyForm) {
@@ -86,6 +106,99 @@ function handlePinSubmission(e) {
 function handleLogout() {
   sessionStorage.removeItem('adminAuthenticated');
   window.location.href = '/';
+}
+
+// ============================================
+// MANUAL QUEUE GENERATION (ADMIN OVERRIDE)
+// ============================================
+
+async function handleManualGenerate(e) {
+  e.preventDefault();
+
+  const stateCode    = document.getElementById('manualStateCode').value.trim();
+  const reason       = document.getElementById('manualReason').value;
+  const resultBox    = document.getElementById('manualGenerateResult');
+  const btn          = document.getElementById('manualGenerateBtn');
+
+  if (!stateCode || !reason) {
+    resultBox.style.display = 'block';
+    resultBox.innerHTML = '<div style="padding:15px;background:#f8d7da;border:2px solid #dc3545;border-radius:8px;color:#721c24;">⚠️ Please fill in both the state code and reason.</div>';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Generating…';
+  resultBox.style.display = 'block';
+  resultBox.innerHTML = '<div style="padding:15px;background:#e2e3e5;border-radius:8px;color:#383d41;">⏳ Generating queue number…</div>';
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/queue/admin-generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        admin_pin: ADMIN_PIN,
+        state_code: stateCode,
+        reason
+      })
+    });
+
+    const data = await response.json();
+
+    if (response.ok) {
+      const isExisting = response.status === 200;
+      const queueNum   = String(data.queue_number).padStart(3, '0');
+
+      resultBox.innerHTML = `
+        <div style="padding:20px;background:#d4edda;border:2px solid #28a745;border-radius:8px;">
+          <h4 style="color:#155724;margin-bottom:15px;">
+            ${isExisting ? '📋 Existing Queue Number Returned' : '✅ Queue Number Generated'}
+          </h4>
+          <table style="width:100%;border-collapse:collapse;">
+            <tr><td style="padding:8px;color:#555;font-weight:600;width:45%;">Queue Number</td><td style="padding:8px;font-size:1.4rem;font-weight:700;color:#155724;">#${queueNum}</td></tr>
+            <tr><td style="padding:8px;color:#555;font-weight:600;">State Code</td><td style="padding:8px;">${stateCode.toUpperCase()}</td></tr>
+            <tr><td style="padding:8px;color:#555;font-weight:600;">LGA</td><td style="padding:8px;">${data.lga}</td></tr>
+            <tr><td style="padding:8px;color:#555;font-weight:600;">Status</td><td style="padding:8px;">${data.status}</td></tr>
+            <tr><td style="padding:8px;color:#555;font-weight:600;">Source</td><td style="padding:8px;">🔧 Admin Override</td></tr>
+            <tr><td style="padding:8px;color:#555;font-weight:600;">Reason</td><td style="padding:8px;">${data.reason || reason}</td></tr>
+            <tr><td style="padding:8px;color:#555;font-weight:600;">Reference ID</td><td style="padding:8px;font-size:0.8rem;word-break:break-all;">${data.reference_id}</td></tr>
+          </table>
+          ${data.admin_generated_today !== undefined
+            ? `<p style="margin-top:12px;font-size:0.85rem;color:#155724;">📋 Admin overrides used today: <strong>${data.admin_generated_today} / 50</strong></p>`
+            : ''}
+        </div>
+      `;
+
+      // Update override count display
+      if (data.admin_generated_today !== undefined) {
+        const countEl = document.getElementById('adminOverrideCount');
+        if (countEl) countEl.textContent = data.admin_generated_today;
+      }
+
+      // Reset form on success
+      document.getElementById('manualGenerateForm').reset();
+      loadStats();
+
+    } else {
+      resultBox.innerHTML = `
+        <div style="padding:20px;background:#f8d7da;border:2px solid #dc3545;border-radius:8px;">
+          <h4 style="color:#721c24;margin-bottom:10px;">❌ Failed to Generate</h4>
+          <p style="color:#721c24;">${data.error || 'An error occurred. Please try again.'}</p>
+        </div>
+      `;
+    }
+
+  } catch (err) {
+    console.error('Manual generate error:', err);
+    resultBox.innerHTML = `
+      <div style="padding:20px;background:#f8d7da;border:2px solid #dc3545;border-radius:8px;">
+        <h4 style="color:#721c24;">❌ Connection Error</h4>
+        <p style="color:#721c24;">Unable to reach server. Please try again.</p>
+      </div>
+    `;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Generate Number for Corps Member';
+  }
 }
 
 // ============================================

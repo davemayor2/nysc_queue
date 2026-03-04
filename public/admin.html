@@ -165,6 +165,51 @@
       </button>
     </div>
 
+    <!-- Manual Queue Generation -->
+    <div class="card">
+      <h2>⚙️ Manual Queue Generation</h2>
+      <p class="info-text">
+        Use this <strong>only</strong> when a corps member cannot self-generate due to GPS failure, broken phone, or app error. Every manual entry is logged with a reason.
+      </p>
+
+      <form id="manualGenerateForm">
+        <div class="form-group">
+          <label for="manualStateCode">Corps Member State Code *</label>
+          <input
+            type="text"
+            id="manualStateCode"
+            placeholder="e.g. LA/23A/1234 or LA/23A/12345"
+            maxlength="13"
+            autocomplete="off"
+            spellcheck="false"
+            required
+          >
+        </div>
+
+        <div class="form-group">
+          <label for="manualReason">Reason *</label>
+          <select id="manualReason" required style="width:100%;padding:12px;border:2px solid #e0e0e0;border-radius:8px;font-size:1rem;background:#fff;">
+            <option value="">— Select a reason —</option>
+            <option value="GPS failure">GPS failure — device cannot acquire location</option>
+            <option value="Broken/no phone">Broken / no smartphone</option>
+            <option value="App error">App error — system rejected valid user</option>
+            <option value="Device blocked in error">Device blocked in error (fingerprint collision)</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+
+        <button type="submit" class="btn btn-primary" id="manualGenerateBtn">
+          Generate Number for Corps Member
+        </button>
+      </form>
+
+      <div id="manualGenerateResult" style="display:none; margin-top:20px;"></div>
+
+      <div id="adminDailyCount" style="margin-top:15px; padding:10px; background:#f8f9fa; border-radius:8px; font-size:0.9rem; color:#666; text-align:center;">
+        📋 Admin overrides today: <strong id="adminOverrideCount">—</strong> / 50
+      </div>
+    </div>
+
     <!-- Queue Verification -->
     <div class="card">
       <h2>🔍 Verify Queue Number</h2>
